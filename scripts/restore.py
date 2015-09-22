@@ -70,7 +70,8 @@ class Restore(object):
         return ret
 
     def create_replica_with_pg_tools(self):
-        if os.path.exists(os.path.join(self.data_dir, 'recovery.done')):
+        if (not os.path.exists(os.path.join(self.data_dir, 'recovery.conf')) and
+            os.path.exists(os.path.join(self.data_dir, 'recovery.done'))):
             try:
                 ret = subprocess.call(['pg_rewind', '-D=' + self.data_dir,
                                        '--source-server=' + self.conn_string],

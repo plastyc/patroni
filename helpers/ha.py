@@ -46,7 +46,7 @@ class Ha:
             self.load_cluster_from_dcs()
             if not self.state_handler.is_healthy():
                 has_lock = self.has_lock()
-                if not has_lock and self.state_handler.recovery_done_exists():
+                if not has_lock and self.state_handler.was_leader():
                     logger.info('syncing old leader from new leader')
                     self.state_handler.sync_from_leader(self.cluster.leader)
                 self.state_handler.write_recovery_conf(None if has_lock else self.cluster.leader)

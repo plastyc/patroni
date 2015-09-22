@@ -166,6 +166,9 @@ class Postgresql:
             return 1
         return ret
 
+    def was_leader(self):
+        return not os.path.isfile(self.recovery_conf) and os.path.isfile(self.recovery_done)
+
     def is_leader(self, check_only=False):
         ret = not self.query('SELECT pg_is_in_recovery()').fetchone()[0]
         if ret and self.is_promoted and not check_only:
@@ -308,9 +311,6 @@ class Postgresql:
                     return pattern and pattern in line
 
         return not pattern
-
-    def recovery_done_exists(self):
-        return os.path.isfile(self.recovery_done)
 
     def write_recovery_conf(self, leader):
         with open(self.recovery_conf, 'w') as f:
