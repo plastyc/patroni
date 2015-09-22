@@ -52,6 +52,7 @@ class Postgresql:
         self.callback = config.get('callbacks', {})
         self.use_slots = config.get('use_slots', True)
         self.recovery_conf = os.path.join(self.data_dir, 'recovery.conf')
+        self.recovery_done = os.path.join(self.data_dir, 'recovery.done')
         self.configuration_to_save = (os.path.join(self.data_dir, 'pg_hba.conf'),
                                       os.path.join(self.data_dir, 'postgresql.conf'))
         self.postmaster_pid = os.path.join(self.data_dir, 'postmaster.pid')
@@ -304,11 +305,12 @@ class Postgresql:
         with open(self.recovery_conf, 'r') as f:
             for line in f:
                 if line.startswith('primary_conninfo'):
-                    if not pattern:
-                        return False
-                    return pattern in line
+                    return pattern and pattern in line
 
         return not pattern
+
+    def recovery_done_exists(self):
+        return os.path.isfile(self.recovery_done)
 
     def write_recovery_conf(self, leader):
         with open(self.recovery_conf, 'w') as f:

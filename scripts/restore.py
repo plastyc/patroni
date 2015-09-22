@@ -7,7 +7,7 @@
 # for the AWS, the folliowing environment variables should be defined:
 # - WALE_ENV_DIR: directory where WAL-E environment is kept
 # - WAL_S3_BUCKET: a name of the S3 bucket for WAL-E
-# - WALE_BACKUP_THRESHOLD_MEGABYTES if WAL amount is above that - use pg_basebackup
+# - WALE_BACKUP_THRESHOLD_MEGABYTES if WAL amount is above that - use pg tools
 # - WALE_BACKUP_THRESHOLD_PERCENTAGE if WAL size exceeds a certain percentage of the
 #   latest backup size
 from collections import namedtuple
@@ -29,7 +29,8 @@ class Restore(object):
     def __init__(self, scope, role, datadir, connstring, env=None):
         self.scope = scope
         self.role = role
-        self.master_connection = Restore.parse_connstring(connstring)
+        self.conn_string = connstring
+        self.master_connection = Restore.parse_connstring(self.conn_string)
         self.data_dir = datadir
         self.env = os.environ.copy() if not env else env
 
@@ -49,13 +50,13 @@ class Restore(object):
         pass
 
     def replica_method(self):
-        return self.create_replica_with_pg_basebackup
+        return self.create_replica_with_pg_tools
 
     def replica_fallback_method(self):
         return None
 
     def run(self):
-        """ creates a new replica using either pg_basebackup or WAL-E """
+        """ creates a new replica using either pg tools or WAL-E """
 
         logger.warning("Starting database restore ...")
 
@@ -68,16 +69,26 @@ class Restore(object):
 
         return ret
 
-    def create_replica_with_pg_basebackup(self):
-        try:
-            ret = subprocess.call(['pg_basebackup', '-R', '-D',
-                                   self.data_dir, '--host=' + self.master_connection['host'],
-                                   '--port=' + str(self.master_connection['port']),
-                                   '-U', self.master_connection['user']],
-                                  env=self.env)
-        except Exception as e:
-            logger.error('Error when fetching backup with pg_basebackup: {0}'.format(e))
-            return 1
+    def create_replica_with_pg_tools(self):
+        if os.path.exists(os.path.join(self.data_dir, 'recovery.done')):
+            try:
+                ret = subprocess.call(['pg_rewind', '-D=' + self.data_dir,
+                                       '--source-server=' + self.conn_string],
+                                      env=self.env)
+            except Exception as e:
+                logger.error('Error when syncing replica with pg_rewind: {0}'.format(e))
+                return 1
+        else:
+            try:
+                ret = subprocess.call(['pg_basebackup', '-R', '-D',
+                                       self.data_dir, '--host=' + self.master_connection['host'],
+                                       '--port=' + str(self.master_connection['port']),
+                                       '-U', self.master_connection['user']],
+                                      env=self.env)
+            except Exception as e:
+                logger.error('Error when fetching backup with pg_basebackup: {0}'.format(e))
+                return 1
+
         return ret
 
 
@@ -129,10 +140,10 @@ class WALERestore(Restore):
         return None
 
     def replica_fallback_method(self):
-        return self.create_replica_with_pg_basebackup
+        return self.create_replica_with_pg_tools
 
     def should_use_s3_to_create_replica(self):
-        """ determine whether it makes sense to use S3 and not pg_basebackup """
+        """ determine whether it makes sense to use S3 and not pg tools """
         if self.init_error:
             return False
 
@@ -198,7 +209,7 @@ class WALERestore(Restore):
             conn and conn.close()
 
         # if the size of the accumulated WAL segments is more than a certan percentage of the backup size
-        # or exceeds the pre-determined size - pg_basebackup is chosen instead.
+        # or exceeds the pre-determined size - pg tools is chosen instead.
         return (diff_in_bytes < long(threshold_megabytes) * 1048576) and\
                (diff_in_bytes < long(backup_size) * float(threshold_backup_size_percentage) / 100)
 
